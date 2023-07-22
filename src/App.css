@@ -1,0 +1,28 @@
+.App {
+  height:100vh;
+}
+
+.App > header {
+  padding:30px;
+  font-size:14pt;
+  font-weight:600;
+  background-color:#6259db;
+  color:#FFFFFF;
+  width:calc(100% - 60px);
+}
+
+.App > main {
+  min-height:calc(100% - (85px + 37px));
+  overflow-y:auto;
+  width:calc(100% - 20px);
+  padding:10px;
+}
+
+.App > footer {
+  padding:10px;
+  font-size:10pt;
+  background-color: #342e8a;
+  width:calc(100% - 20px);
+  color:#FFFFFF;
+  text-align:center;
+}
