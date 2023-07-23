@@ -24,6 +24,11 @@
     border-radius:10px 10px 0 0;
 }
 
+.graph-view-container canvas {
+    width:calc(100% - 330px);
+    height:calc(100% - 55px);
+}
+
 .graph-view-container .graph-view-control,
 .graph-view-container .graph-node-control {
     max-width:330px;
@@ -32,6 +37,11 @@
     flex-direction: column;
     justify-content: start;
     align-items: start;
+}
+
+.graph-view-container .graph-view-control {
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .graph-view-container .graph-view-control-row-container {
@@ -157,14 +167,12 @@
     border:1px dashed #AAAAAA;
 }
 
-.graph-view-container .graph-node-control>table::-webkit-scrollbar {
+.graph-view-container *::-webkit-scrollbar {
     border-radius:5px;
     width:5px;
-    background-color: #FFFFFF;
-    opacity:0;
 }
 
-.graph-view-container .graph-node-control>table::-webkit-scrollbar-thumb {
+.graph-view-container *::-webkit-scrollbar-thumb {
     border-radius:5px;
     background-color:#00000055;
     width:5px;
@@ -183,7 +191,10 @@
     text-align:center;
     vertical-align:middle;
     padding:5px;
-    width:calc(100% - 10px);
+    max-width:calc(100% - 10px);
+    width:100%;
+    text-overflow:ellipsis;
+    overflow:hidden;
     font-size:10pt;
 }
 

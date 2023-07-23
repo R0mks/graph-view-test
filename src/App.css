@@ -12,7 +12,8 @@
 }
 
 .App > main {
-  min-height:calc(100% - (85px + 37px));
+  max-height:calc(100% - (85px + 37px + 20px));
+  height:100%;
   overflow-y:auto;
   width:calc(100% - 20px);
   padding:10px;

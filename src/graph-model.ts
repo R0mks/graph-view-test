@@ -90,6 +90,24 @@ export class GraphModel {
         this.arrLinks.splice(key, 1);
         return true;
     }
+    
+    public setNode(node: Node, index: number): boolean {
+        let tempNode = this.nodeCorrect(node);
+        if(this.arrNode[index] = tempNode) {
+            return true;
+        }
+        return false;
+    }
+
+    public setLink(link: Link, index: number): boolean {
+        if(!this.isLinkCorrect(link)) {
+            return false;
+        }
+        if (this.arrLinks[index] = link) {
+            return true;
+        }
+        return false;
+    }
 
     private nodeCorrect(node: Node): Node {
         if(node.label.length <= 0) {
@@ -121,6 +139,9 @@ export class GraphModel {
     }
 
     private isLinkCorrect(link: Link): boolean {
+        if (link.from == link.to) {
+            return false;
+        }
         if (this.arrNode === null ||
             this.arrNode.length <= 0 ||
             link.from > this.arrNode.length - 1 || 

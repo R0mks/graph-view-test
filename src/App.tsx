@@ -36,6 +36,8 @@ function App() {
             {from:5, to:9}
           ])}
           captionHeader={"Тестовый граф"}
+          viewWidthPx={800}
+          viewHeightPx={648}
         />
       </main>
       <footer>
