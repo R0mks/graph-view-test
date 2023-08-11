@@ -1,11 +1,13 @@
+import { toHaveFocus } from "@testing-library/jest-dom/matchers";
 import React from "react";
+import { getDefaultCompilerOptions } from "typescript";
 import { GraphModel, Node, Link } from "./graph-model";
 import "./graph-view.css"
 
 interface Props {
     model: GraphModel;
-    viewWidthPx: number,
-    viewHeightPx: number,
+    viewWidthPx: number;
+    viewHeightPx: number;
     captionHeader?: string;
     nodePxSize?: number;
     nodePxBorder?: number;
@@ -39,7 +41,6 @@ interface State {
             isDrag: boolean;
         }
     };
-    caption: string;
     showComponent: boolean;
 }
 
@@ -52,6 +53,9 @@ const GraphViewConfig = {
         nodeLinks: "node-links",
         nodeLinksFrom: "node-links-from",
         nodeLinksTo: "node-links-to"
+    },
+    defaultValues: {
+        captionHeader: 'GRAPH_VIEW'
     }
 }
 
@@ -61,7 +65,14 @@ const getStylePropNumberValue = function (objStyle: CSSStyleDeclaration, propert
 }
 
 export class GraphView extends React.Component<Props, State> {
-    static objectCounter: number = 0;
+    private static objectUnnamedCounter: number = 0;
+    private static defaultProps: Partial<Props> = {
+        captionHeader:  GraphViewConfig.defaultValues.captionHeader,
+        nodePxSize: 7,
+        nodePxBorder: 2,
+        linePxThickness: 3
+    }
+    public static objectStack: Array<GraphView> = [];
 
     private componentObj!: HTMLElement;
     private nodeOptionsObj!: HTMLDivElement;
@@ -74,17 +85,13 @@ export class GraphView extends React.Component<Props, State> {
     private nodeOptionsRef: React.RefObject<HTMLDivElement>;
     
     private data: GraphViewData;
-    private graphModel: GraphModel;
+    private currentUnnamedObjectNum!: number;
     private currentArrNodes: Array<Node>;
     private currentArrLinks: Array<Link>;
 
-    private nodeSize: number;
-    private nodeBorderSize: number;
-    private lineThickness: number;
-
-    constructor(props: Props) {
-        super(props);
-
+    constructor(properites: Props) {
+        super(properites);
+        
         this.data = {
             canvas: {
                 mouseData: {
@@ -96,13 +103,13 @@ export class GraphView extends React.Component<Props, State> {
 
         this.state = {
             container: {
-                width: props.viewWidthPx,
-                height: props.viewHeightPx
+                width: properites.viewWidthPx,
+                height: properites.viewHeightPx,
             },
             canvas: { 
                 selfData: {
-                    width: props.viewWidthPx,
-                    height: props.viewHeightPx,
+                    width: properites.viewWidthPx,
+                    height: properites.viewHeightPx,
                     offsetX: 0,
                     offsetY: 0
                 },
@@ -112,21 +119,21 @@ export class GraphView extends React.Component<Props, State> {
                     isDrag: false
                 },
             },
-            showComponent: true,
-            caption: `${props.captionHeader?.length ? props.captionHeader : `GRAPH_VIEW_${++GraphView.objectCounter}`}`
+            showComponent: true
         };
 
         this.componentRef = React.createRef();
         this.canvasRef = React.createRef();
         this.nodeOptionsRef = React.createRef();
 
-        this.nodeSize = props.nodePxSize !== undefined ? props.nodePxSize : 7;
-        this.nodeBorderSize = props.nodePxBorder !== undefined ? props.nodePxBorder : 2;
-        this.lineThickness = props.linePxThickness !== undefined ? props.linePxThickness : 3;
-
-        this.graphModel = props.model;
-        this.currentArrNodes = this.graphModel.getNodes();
-        this.currentArrLinks = this.graphModel.getLinks();
+        this.currentArrNodes = this.props.model.getNodes();
+        this.currentArrLinks = this.props.model.getLinks();
+        
+        if(this.props.captionHeader === GraphViewConfig.defaultValues.captionHeader) {
+            this.currentUnnamedObjectNum = ++GraphView.objectUnnamedCounter;
+            console.log("Caption undefined", GraphView.objectUnnamedCounter);
+        }
+        console.log(this.props.captionHeader, GraphView.objectUnnamedCounter);
 
         this.handlerCanvasOnMouseDown.bind(this);
         this.handlerCanvasOnMouseUp.bind(this);
@@ -138,10 +145,10 @@ export class GraphView extends React.Component<Props, State> {
 
     private isNodeCatched(clientX: number, clientY: number, node: Node): boolean {
 
-        let nodeLeft: number = node.pos[0] - this.nodeSize,
-            nodeTop: number = node.pos[1] - this.nodeSize,
-            nodeRight: number = node.pos[0] + this.nodeSize * 2,
-            nodeBottom: number = node.pos[1] + this.nodeSize * 2;
+        let nodeLeft: number = node.pos[0] - this.props.nodePxSize!,
+            nodeTop: number = node.pos[1] - this.props.nodePxSize!,
+            nodeRight: number = node.pos[0] + this.props.nodePxSize! * 2,
+            nodeBottom: number = node.pos[1] + this.props.nodePxSize! * 2;
 
         if (clientX > nodeLeft && 
             clientX < nodeRight &&
@@ -182,7 +189,7 @@ export class GraphView extends React.Component<Props, State> {
                             isDrag: true
                         }, 
                     }
-                }), () => this.update());
+                }), () => this.updateModel());
 
                 return;
             }
@@ -199,7 +206,7 @@ export class GraphView extends React.Component<Props, State> {
                     isDrag: false
                 }
             }
-        }), () => this.update());  
+        }), () => this.updateModel());  
     }
 
     private handlerCanvasOnMouseUp(event: React.MouseEvent<HTMLCanvasElement>) {
@@ -218,9 +225,9 @@ export class GraphView extends React.Component<Props, State> {
                 }
             }
         }));
-        this.graphModel.setNode(this.currentArrNodes[this.state.canvas.nodeData.selectedId], this.state.canvas.nodeData.selectedId);
+        this.props.model.setNode(this.currentArrNodes[this.state.canvas.nodeData.selectedId], this.state.canvas.nodeData.selectedId);
 
-        this.update();
+        this.updateModel();
     }
 
     private handlerCanvasOnMouseOut(event: React.MouseEvent<HTMLCanvasElement>) {
@@ -239,9 +246,9 @@ export class GraphView extends React.Component<Props, State> {
                 }
             }
         }));
-        this.graphModel.setNode(this.currentArrNodes[this.state.canvas.nodeData.selectedId], this.state.canvas.nodeData.selectedId);
+        this.props.model.setNode(this.currentArrNodes[this.state.canvas.nodeData.selectedId], this.state.canvas.nodeData.selectedId);
 
-        this.update();
+        this.updateModel();
     }
 
     private handlerCanvasOnMouseMove(event: React.MouseEvent<HTMLCanvasElement>) {
@@ -269,7 +276,7 @@ export class GraphView extends React.Component<Props, State> {
                 }            
             }
         };
-        this.update();
+        this.updateModel();
     }
 
     private handlerAddLink() {
@@ -284,22 +291,22 @@ export class GraphView extends React.Component<Props, State> {
             alert("Введены неверные значения");
             return;
         }
-        if (this.graphModel.addLink(newLink) < 0) {
+        if (this.props.model.addLink(newLink) < 0) {
             alert("Такая связь существует, или её невозможно установить!");
            return;
         }
         inputNodeLinksFromObj.value = "";
         inputNodeLinksToObj.value = "";
-        this.update();
+        this.updateModel();
     }
 
     private handlerRemoveLink(index: number) {
         let inputNodeLinksObj: HTMLTableElement = this.nodeOptionsObj.querySelector(`#${GraphViewConfig.fieldsAttrIds.nodeLinks}`)!;
         const removeTableRow = inputNodeLinksObj.rows[index];
-        if(this.graphModel.removeLink(index)) {
+        if(this.props.model.removeLink(index)) {
             removeTableRow?.remove();
         }
-        this.update();
+        this.updateModel();
     }
 
     private handlerAddNode() {
@@ -314,19 +321,19 @@ export class GraphView extends React.Component<Props, State> {
                 ...prevState.canvas,
                 nodeData: {
                     ...prevState.canvas.nodeData,
-                    selectedId: this.graphModel.addNode(newNode)
+                    selectedId: this.props.model.addNode(newNode)
                 }
             }
         }), () => {
             if(this.state.canvas.nodeData.selectedId  < 0) {
                 alert("Ошибка добавления узла");
             }
-            this.update();
+            this.updateModel();
         });
     }
 
     private handlerRemoveNode() {
-        this.graphModel.removeNode(this.state.canvas.nodeData.selectedId);
+        this.props.model.removeNode(this.state.canvas.nodeData.selectedId);
         this.setState(prevState =>({
             ...prevState,
             canvas: {
@@ -336,7 +343,7 @@ export class GraphView extends React.Component<Props, State> {
                     selectedId: -1
                 }
             }
-        }), () => this.update());
+        }), () => this.updateModel());
     }
 
     private handlerHideGraphView(){
@@ -363,7 +370,7 @@ export class GraphView extends React.Component<Props, State> {
                     offsetY: canvasOffsetY
                 }
             }
-        }), () => this.update());
+        }), () => this.updateModel());
     }
     
     public handlerScroll() {
@@ -382,47 +389,55 @@ export class GraphView extends React.Component<Props, State> {
                     offsetY: canvasOffsetY
                 }
             }
-        }), () => this.update());
+        }), () => this.updateModel());
     }
 
     private drawNode(node: Node, isSelected: boolean = false) {
         // отрисовка границ узла
         this.canvasContext.fillStyle = node.color;
         this.canvasContext.fillRect(
-            node.pos[0] - this.nodeSize - this.nodeBorderSize * 2, 
-            node.pos[1] - this.nodeSize - this.nodeBorderSize * 2, 
-            this.nodeSize * 2 + this.nodeBorderSize * 2, 
-            this.nodeSize * 2 + this.nodeBorderSize * 2);
+            node.pos[0] - this.props.nodePxSize! - this.props.nodePxBorder! * 2, 
+            node.pos[1] - this.props.nodePxSize! - this.props.nodePxBorder! * 2, 
+            this.props.nodePxSize! * 2 + this.props.nodePxBorder! * 2, 
+            this.props.nodePxSize! * 2 + this.props.nodePxBorder! * 2);
         // если узел выделен то граница "белая", иначе "угольная"
         this.canvasContext.fillStyle = isSelected ? "#FFFFFF" : "#333333";
         this.canvasContext.fillRect(
-            node.pos[0] - this.nodeSize - this.nodeBorderSize, 
-            node.pos[1] - this.nodeSize - this.nodeBorderSize, 
-            this.nodeSize * 2 + this.nodeBorderSize - this.nodeBorderSize, 
-            this.nodeSize * 2 + this.nodeBorderSize - this.nodeBorderSize);
+            node.pos[0] - this.props.nodePxSize! - this.props.nodePxBorder!, 
+            node.pos[1] - this.props.nodePxSize! - this.props.nodePxBorder!, 
+            this.props.nodePxSize! * 2 + this.props.nodePxBorder! - this.props.nodePxBorder!, 
+            this.props.nodePxSize! * 2 + this.props.nodePxBorder! - this.props.nodePxBorder!);
 
         // отрисовка тела узла (квадрат)
         this.canvasContext.fillStyle = node.color;
         this.canvasContext.fillRect(
-            node.pos[0] - this.nodeSize, 
-            node.pos[1] - this.nodeSize, 
-            this.nodeSize * 2 - this.nodeBorderSize * 2, 
-            this.nodeSize * 2 - this.nodeBorderSize * 2);
+            node.pos[0] - this.props.nodePxSize!, 
+            node.pos[1] - this.props.nodePxSize!, 
+            this.props.nodePxSize! * 2 - this.props.nodePxBorder! * 2, 
+            this.props.nodePxSize! * 2 - this.props.nodePxBorder! * 2);
         
         // Описание узла
-        this.canvasContext.font = `${this.nodeSize}pt Verdana`;
+        this.canvasContext.font = `${this.props.nodePxSize!}pt Verdana`;
         this.canvasContext.textAlign = "center";
-        this.canvasContext.fillText(node.label, node.pos[0], node.pos[1] + this.nodeSize * 2.5);
+        this.canvasContext.fillText(node.label, node.pos[0], node.pos[1] + this.props.nodePxSize! * 2.5);
     }
 
     private drawLink(nodeFrom: Node, nodeTo: Node) {
-        this.canvasContext.lineWidth = this.lineThickness;
+        this.canvasContext.lineWidth = this.props.linePxThickness!;
         this.canvasContext.beginPath();
         this.canvasContext.moveTo(nodeFrom.pos[0], nodeFrom.pos[1]);
         this.canvasContext.lineTo(nodeTo.pos[0], nodeTo.pos[1]);
         this.canvasContext.strokeStyle = nodeFrom.color;
         this.canvasContext.stroke();
         this.canvasContext.closePath();
+    }
+
+    private updateModel() {
+        for(let i = 0; i < GraphView.objectStack.length; ++i) {
+            if(GraphView.objectStack[i].props.model === this.props.model) {
+                GraphView.objectStack[i].update();
+            }
+        }
     }
 
     public update() {
@@ -450,6 +465,8 @@ export class GraphView extends React.Component<Props, State> {
         if(this.componentObj.parentElement) {
             this.componentObj.parentElement.removeEventListener("scroll", () => this.handlerScroll());
         }
+
+        GraphView.objectStack.splice(GraphView.objectStack.indexOf(this), 1);
     }
 
     public componentDidMount() {
@@ -479,6 +496,8 @@ export class GraphView extends React.Component<Props, State> {
             const tempNodeOptions = this.nodeOptionsRef.current;
             this.nodeOptionsObj = tempNodeOptions;
         } 
+
+        GraphView.objectStack.push(this);
 
         // Установка размера контейнера, с учётом указаных viewHeightPx и viewWidthPx для canvas
         const nodeOptionsObjStyles = window.getComputedStyle(this.nodeOptionsObj);
@@ -512,7 +531,9 @@ export class GraphView extends React.Component<Props, State> {
                     height: `${this.state.container.height}px`
                 }}
             >
-                <div className="graph-view-caption">{ this.state.caption }</div>
+                <div className="graph-view-caption">
+                    { this.props.captionHeader !== GraphViewConfig.defaultValues.captionHeader ? this.props.captionHeader : `${this.props.captionHeader}_${this.currentUnnamedObjectNum}` }
+                </div>
                 <input type="button" id="graph-view-close" value="X" onClick={ () => this.handlerHideGraphView() }/>
                 <canvas 
                     ref={ this.canvasRef }
@@ -562,9 +583,9 @@ export class GraphView extends React.Component<Props, State> {
                                             }
                                         }
                                     }), () => {
-                                        this.graphModel.setNode(this.state.canvas.nodeData.selectedNode!,this.state.canvas.nodeData.selectedId);
+                                        this.props.model.setNode(this.state.canvas.nodeData.selectedNode!,this.state.canvas.nodeData.selectedId);
                                         this.currentArrNodes[this.state.canvas.nodeData.selectedId] = this.state.canvas.nodeData.selectedNode!;
-                                        this.update();
+                                        this.updateModel();
                                     });
                                 }}
                             />
@@ -596,9 +617,9 @@ export class GraphView extends React.Component<Props, State> {
                                                         }
                                                     }
                                                 }), () => {
-                                                    this.graphModel.setNode(this.state.canvas.nodeData.selectedNode!, this.state.canvas.nodeData.selectedId);
+                                                    this.props.model.setNode(this.state.canvas.nodeData.selectedNode!, this.state.canvas.nodeData.selectedId);
                                                     this.currentArrNodes[this.state.canvas.nodeData.selectedId] = this.state.canvas.nodeData.selectedNode!;
-                                                    this.update();
+                                                    this.updateModel();
                                                 });
                                             }
                                         }}
@@ -631,9 +652,9 @@ export class GraphView extends React.Component<Props, State> {
                                                         }
                                                     }
                                                 }), () => {
-                                                    this.graphModel.setNode(this.state.canvas.nodeData.selectedNode!, this.state.canvas.nodeData.selectedId);
+                                                    this.props.model.setNode(this.state.canvas.nodeData.selectedNode!, this.state.canvas.nodeData.selectedId);
                                                     this.currentArrNodes[this.state.canvas.nodeData.selectedId] = this.state.canvas.nodeData.selectedNode!;
-                                                    this.update();
+                                                    this.updateModel();
                                                 });
                                             }
                                         }}
@@ -669,9 +690,9 @@ export class GraphView extends React.Component<Props, State> {
                                             }
                                         }
                                     }), () => {
-                                        this.graphModel.setNode(this.state.canvas.nodeData.selectedNode!,this.state.canvas.nodeData.selectedId);
+                                        this.props.model.setNode(this.state.canvas.nodeData.selectedNode!,this.state.canvas.nodeData.selectedId);
                                         this.currentArrNodes[this.state.canvas.nodeData.selectedId] = this.state.canvas.nodeData.selectedNode!;
-                                        this.update();
+                                        this.updateModel();
                                     });
                                 }}
                             />
@@ -727,4 +748,3 @@ export class GraphView extends React.Component<Props, State> {
         );
     }
 }
-
