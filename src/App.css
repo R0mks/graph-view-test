@@ -12,6 +12,9 @@
 }
 
 .App > main {
+  display:flex;
+  flex-direction:row;
+  flex-wrap:wrap;
   max-height:calc(100% - (85px + 37px + 20px));
   height:100%;
   overflow-y:auto;
