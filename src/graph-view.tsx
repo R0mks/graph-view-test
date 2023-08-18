@@ -1,6 +1,4 @@
-import { toHaveFocus } from "@testing-library/jest-dom/matchers";
 import React from "react";
-import { getDefaultCompilerOptions } from "typescript";
 import { GraphModel, Node, Link } from "./graph-model";
 import "./graph-view.css"
 
@@ -19,6 +17,11 @@ interface GraphViewData {
         mouseData: {
             lastPosX: number;
             lastPosY: number;
+        },
+        nodeData: {
+            selectedNode: Node | null,
+            selectedId: number;
+            isDrag: boolean;
         }
     }
 }
@@ -29,34 +32,13 @@ interface State {
         height: number;
     },
     canvas: {
-        selfData: { 
-            width: number;
-            height: number;
-            offsetX: number;
-            offsetY: number;
-        },
-        nodeData: {
-            selectedNode: Node | null,
-            selectedId: number;
-            isDrag: boolean;
-        }
+        width: number;
+        height: number;
+        offsetX: number;
+        offsetY: number;
     };
+    
     showComponent: boolean;
-}
-
-const GraphViewConfig = {
-    fieldsAttrIds: {
-        nodeLabel: "node-label",
-        nodePosX: "node-pos-x",
-        nodePosY: "node-pos-y",
-        nodeColor: "node-pos",
-        nodeLinks: "node-links",
-        nodeLinksFrom: "node-links-from",
-        nodeLinksTo: "node-links-to"
-    },
-    defaultValues: {
-        captionHeader: 'GRAPH_VIEW'
-    }
 }
 
 const getStylePropNumberValue = function (objStyle: CSSStyleDeclaration, property: string): number {
@@ -67,22 +49,21 @@ const getStylePropNumberValue = function (objStyle: CSSStyleDeclaration, propert
 export class GraphView extends React.Component<Props, State> {
     private static objectUnnamedCounter: number = 0;
     private static defaultProps: Partial<Props> = {
-        captionHeader:  GraphViewConfig.defaultValues.captionHeader,
+        captionHeader:  'GRAPH_VIEW',
         nodePxSize: 7,
         nodePxBorder: 2,
         linePxThickness: 3
-    }
+    };
+    private static objectFocused: GraphView | null = null;
+    private static isWindowMouseEvtCatched = false;
     public static objectStack: Array<GraphView> = [];
 
     private componentObj!: HTMLElement;
-    private nodeOptionsObj!: HTMLDivElement;
-
     private canvasObj!: HTMLCanvasElement;
     private canvasContext!: CanvasRenderingContext2D;
 
     private componentRef: React.RefObject<HTMLDivElement>;
     private canvasRef: React.RefObject<HTMLCanvasElement>;
-    private nodeOptionsRef: React.RefObject<HTMLDivElement>;
     
     private data: GraphViewData;
     private currentUnnamedObjectNum!: number;
@@ -97,6 +78,11 @@ export class GraphView extends React.Component<Props, State> {
                 mouseData: {
                     lastPosX: 0,
                     lastPosY: 0
+                },
+                nodeData: {
+                    selectedNode: null,
+                    selectedId: -1,
+                    isDrag: false
                 }
             }
         };
@@ -107,40 +93,27 @@ export class GraphView extends React.Component<Props, State> {
                 height: properites.viewHeightPx,
             },
             canvas: { 
-                selfData: {
-                    width: properites.viewWidthPx,
-                    height: properites.viewHeightPx,
-                    offsetX: 0,
-                    offsetY: 0
-                },
-                nodeData: {
-                    selectedNode: null,
-                    selectedId: -1,
-                    isDrag: false
-                },
+                width: properites.viewWidthPx,
+                height: properites.viewHeightPx,
+                offsetX: 0,
+                offsetY: 0
             },
             showComponent: true
         };
 
         this.componentRef = React.createRef();
         this.canvasRef = React.createRef();
-        this.nodeOptionsRef = React.createRef();
 
         this.currentArrNodes = this.props.model.getNodes();
         this.currentArrLinks = this.props.model.getLinks();
         
-        if(this.props.captionHeader === GraphViewConfig.defaultValues.captionHeader) {
+        if(this.props.captionHeader === GraphView.defaultProps.captionHeader) {
             this.currentUnnamedObjectNum = ++GraphView.objectUnnamedCounter;
-            console.log("Caption undefined", GraphView.objectUnnamedCounter);
         }
-        console.log(this.props.captionHeader, GraphView.objectUnnamedCounter);
-
         this.handlerCanvasOnMouseDown.bind(this);
-        this.handlerCanvasOnMouseUp.bind(this);
-        this.handlerCanvasOnMouseOut.bind(this);
-        this.handlerCanvasOnMouseMove.bind(this);
         this.handlerResize.bind(this);
         this.handlerScroll.bind(this);
+        this.handlerFocuseContainer.bind(this);
     }
 
     private isNodeCatched(clientX: number, clientY: number, node: Node): boolean {
@@ -159,13 +132,11 @@ export class GraphView extends React.Component<Props, State> {
         return false;
     }
 
-    private handlerCanvasOnMouseDown(event: React.MouseEvent<HTMLCanvasElement>) {
+    private handlerCanvasOnMouseDown(event: React.MouseEvent<HTMLCanvasElement>): void {
         event.preventDefault();
-
-        let clientPosX: number = event.clientX - this.state.canvas.selfData.offsetX;
-        let clientPosY: number = event.clientY - this.state.canvas.selfData.offsetY;
-
-
+        let clientPosX: number = event.clientX - this.state.canvas.offsetX;
+        let clientPosY: number = event.clientY - this.state.canvas.offsetY;
+        
         for(let i = 0; i < this.currentArrNodes.length; ++i)
         {
             if(this.isNodeCatched(clientPosX, clientPosY, this.currentArrNodes[i])) {
@@ -174,186 +145,149 @@ export class GraphView extends React.Component<Props, State> {
                         mouseData: {
                             lastPosX: this.currentArrNodes[i].pos[0], 
                             lastPosY: this.currentArrNodes[i].pos[1]
-                        }
-                    }
-                };
-
-                /// Обновление canvas через callback, поскольку иначе выделение узлов происходит некорректно
-                this.setState(prevState => ({
-                    ...prevState,
-                    canvas: {
-                        ...prevState.canvas,
+                        },
                         nodeData: {
                             selectedNode: this.currentArrNodes[i],
                             selectedId: i, 
                             isDrag: true
-                        }, 
+                        }
                     }
-                }), () => this.updateModel());
-
+                };
+                this.updateViews();
                 return;
             }
         }
 
-        /// Тоже самое, но со снятием выделения
-        this.setState(prevState => ({
-            ...prevState,
+        this.data = {
             canvas: {
-                ...prevState.canvas,
+                ...this.data.canvas,
                 nodeData: {
                     selectedNode: null,
                     selectedId: -1, 
                     isDrag: false
                 }
+
             }
-        }), () => this.updateModel());  
+        }
+        this.handlerFocuseContainer(event);
+        this.updateViews();
     }
 
-    private handlerCanvasOnMouseUp(event: React.MouseEvent<HTMLCanvasElement>) {
-        if(!this.state.canvas.nodeData.isDrag) {
+    private static handlerCanvasOnMouseUp(event: MouseEvent): void {
+        if (GraphView.objectFocused === null) {
+            return;
+        }
+        if(!GraphView.objectFocused.data.canvas.nodeData.isDrag) {
             return;
         }
 
         event.preventDefault();
-        this.setState(prevState => ({
-            ...prevState,
+        GraphView.objectFocused.data = {
             canvas: {
-                ...prevState.canvas,
+                ...GraphView.objectFocused.data.canvas,
                 nodeData: {
-                    ...prevState.canvas.nodeData,
+                    ...GraphView.objectFocused.data.canvas.nodeData,
                     isDrag: false
                 }
             }
-        }));
-        this.props.model.setNode(this.currentArrNodes[this.state.canvas.nodeData.selectedId], this.state.canvas.nodeData.selectedId);
+        };
+        GraphView.objectFocused.props.model.setNode(GraphView.objectFocused.currentArrNodes[GraphView.objectFocused.data.canvas.nodeData.selectedId], GraphView.objectFocused.data.canvas.nodeData.selectedId);
 
-        this.updateModel();
+        GraphView.objectFocused.updateViews();
     }
 
-    private handlerCanvasOnMouseOut(event: React.MouseEvent<HTMLCanvasElement>) {
-        if(!this.state.canvas.nodeData.isDrag) {
+    private static handlerCanvasOnMouseMove(event: MouseEvent): void {
+        if (GraphView.objectFocused === null) {
+            return;
+        }
+        if (!GraphView.objectFocused.data.canvas.nodeData.isDrag) {
             return;
         }
         
         event.preventDefault();
-        this.setState(prevState => ({
-            ...prevState,
+        let clientPosX: number = event.clientX - GraphView.objectFocused.state.canvas.offsetX;
+        let clientPosY: number = event.clientY - GraphView.objectFocused.state.canvas.offsetY;
+
+        let deltaX: number = clientPosX - GraphView.objectFocused.data.canvas.mouseData.lastPosX;
+        let deltaY: number = clientPosY - GraphView.objectFocused.data.canvas.mouseData.lastPosY;
+
+        GraphView.objectFocused.currentArrNodes[GraphView.objectFocused.data.canvas.nodeData.selectedId].pos[0] += deltaX;
+        GraphView.objectFocused.currentArrNodes[GraphView.objectFocused.data.canvas.nodeData.selectedId].pos[1] += deltaY;
+
+        GraphView.objectFocused.data = {
             canvas: {
-                ...prevState.canvas,
-                nodeData: {
-                    ...prevState.canvas.nodeData,
-                    isDrag: false
-                }
-            }
-        }));
-        this.props.model.setNode(this.currentArrNodes[this.state.canvas.nodeData.selectedId], this.state.canvas.nodeData.selectedId);
-
-        this.updateModel();
-    }
-
-    private handlerCanvasOnMouseMove(event: React.MouseEvent<HTMLCanvasElement>) {
-        if (!this.state.canvas.nodeData.isDrag) {
-            return;
-        }
-        
-        event.preventDefault();
-        let clientPosX: number = event.clientX - this.state.canvas.selfData.offsetX;
-        let clientPosY: number = event.clientY - this.state.canvas.selfData.offsetY;
-
-        let deltaX: number = clientPosX - this.data.canvas.mouseData.lastPosX;
-        let deltaY: number = clientPosY - this.data.canvas.mouseData.lastPosY;
-
-        this.currentArrNodes[this.state.canvas.nodeData.selectedId].pos[0] += deltaX;
-        this.currentArrNodes[this.state.canvas.nodeData.selectedId].pos[1] += deltaY;
-
-        this.data = {
-            ...this.data,
-            canvas: {
-                ...this.data.canvas,
+                ...GraphView.objectFocused.data.canvas,
                 mouseData: {
-                    lastPosX: this.currentArrNodes[this.state.canvas.nodeData.selectedId].pos[0], 
-                    lastPosY: this.currentArrNodes[this.state.canvas.nodeData.selectedId].pos[1]
+                    lastPosX: GraphView.objectFocused.currentArrNodes[GraphView.objectFocused.data.canvas.nodeData.selectedId].pos[0], 
+                    lastPosY: GraphView.objectFocused.currentArrNodes[GraphView.objectFocused.data.canvas.nodeData.selectedId].pos[1]
                 }            
             }
         };
-        this.updateModel();
+        GraphView.objectFocused.updateViews();
     }
 
-    private handlerAddLink() {
-        let inputNodeLinksFromObj: HTMLInputElement = this.nodeOptionsObj.querySelector(`#${GraphViewConfig.fieldsAttrIds.nodeLinksFrom}`)!;
-        let inputNodeLinksToObj: HTMLInputElement = this.nodeOptionsObj.querySelector(`#${GraphViewConfig.fieldsAttrIds.nodeLinksTo}`)!;
-        let fromValue: number = parseInt(inputNodeLinksFromObj.value),
-            toValue: number = parseInt(inputNodeLinksToObj.value);
-        console.log(inputNodeLinksFromObj.value, inputNodeLinksToObj.value)
-        let newLink: Link = {from: fromValue, to: toValue};
-        if(!inputNodeLinksFromObj.validity.valid ||
-           !inputNodeLinksToObj.validity.valid) {
-            alert("Введены неверные значения");
+    private handlerFocuseContainer(event: React.MouseEvent<HTMLElement>): void {
+        event.preventDefault();
+        if(event.currentTarget.classList.contains("focused")) {
             return;
         }
-        if (this.props.model.addLink(newLink) < 0) {
-            alert("Такая связь существует, или её невозможно установить!");
-           return;
+        
+        for (let i = 0; i < GraphView.objectStack.length; i++) {
+            if(GraphView.objectStack[i].componentObj.classList.contains("focused")) {
+                GraphView.objectStack[i].data = {
+                    canvas: {
+                        ...GraphView.objectStack[i].data.canvas,
+                        nodeData:{
+                            selectedNode: null,
+                            isDrag: false,
+                            selectedId: -1,
+                        }
+                    }
+                }
+                GraphView.objectStack[i].componentObj.classList.remove("focused");
+                GraphView.objectStack[i].update();
+                break;
+            }
         }
-        inputNodeLinksFromObj.value = "";
-        inputNodeLinksToObj.value = "";
-        this.updateModel();
+
+        event.currentTarget.classList.add("focused");
+        GraphView.objectFocused = this;
     }
 
-    private handlerRemoveLink(index: number) {
-        let inputNodeLinksObj: HTMLTableElement = this.nodeOptionsObj.querySelector(`#${GraphViewConfig.fieldsAttrIds.nodeLinks}`)!;
-        const removeTableRow = inputNodeLinksObj.rows[index];
-        if(this.props.model.removeLink(index)) {
-            removeTableRow?.remove();
+    public unfocuseContainer(): void {
+        if (GraphView.objectFocused === null) {
+            return;
         }
-        this.updateModel();
-    }
-
-    private handlerAddNode() {
-        let newNode: Node = {
-            label: "",
-            pos: [this.state.canvas.selfData.width / 2, this.state.canvas.selfData.height / 2],
-            color: ""
-        };
-        this.setState(prevState =>({
-            ...prevState,
+        GraphView.objectFocused.data = {
             canvas: {
-                ...prevState.canvas,
-                nodeData: {
-                    ...prevState.canvas.nodeData,
-                    selectedId: this.props.model.addNode(newNode)
+                ...GraphView.objectFocused.data.canvas,
+                nodeData:{
+                    selectedNode: null,
+                    isDrag: false,
+                    selectedId: -1,
                 }
             }
-        }), () => {
-            if(this.state.canvas.nodeData.selectedId  < 0) {
-                alert("Ошибка добавления узла");
-            }
-            this.updateModel();
-        });
+        }
+        GraphView.objectFocused.componentObj.classList.remove("focused");
+        GraphView.objectFocused.update();
+        GraphView.objectFocused = null;
+        
     }
 
-    private handlerRemoveNode() {
-        this.props.model.removeNode(this.state.canvas.nodeData.selectedId);
-        this.setState(prevState =>({
-            ...prevState,
-            canvas: {
-                ...prevState.canvas,
-                nodeData: {
-                    ...prevState.canvas.nodeData,
-                    selectedId: -1
-                }
-            }
-        }), () => this.updateModel());
-    }
-
-    private handlerHideGraphView(){
+    public handlerHideGraphView(event: React.MouseEvent<HTMLElement>): void {
+        event.preventDefault();
+        this.componentObj.classList.remove("focused");
         this.setState(prevState => ({
             ...prevState,
             showComponent: false
-        }));
+        }), () => {
+            for(let i = 0; i < GraphView.objectStack.length; ++i) {
+                GraphView.objectStack[i].handlerScroll();
+            }
+        });
     }
 
-    public handlerResize() {
+    public handlerResize(): void {
         let canvasOffsetData = this.canvasObj.getBoundingClientRect();
         let canvasOffsetX: number = canvasOffsetData.left;
         let canvasOffsetY: number = canvasOffsetData.top;
@@ -361,19 +295,15 @@ export class GraphView extends React.Component<Props, State> {
         this.setState(prevState => ({
             ...prevState,
             canvas: {
-                ...prevState.canvas,
-                selfData:
-                {
-                    width: this.canvasObj.offsetWidth, 
-                    height: this.canvasObj.offsetHeight,
-                    offsetX: canvasOffsetX,
-                    offsetY: canvasOffsetY
-                }
+                width: this.canvasObj.offsetWidth, 
+                height: this.canvasObj.offsetHeight,
+                offsetX: canvasOffsetX,
+                offsetY: canvasOffsetY
             }
-        }), () => this.updateModel());
+        }), () => this.updateViews());
     }
     
-    public handlerScroll() {
+    public handlerScroll(): void {
         let canvasOffsetData = this.canvasObj.getBoundingClientRect();
         let canvasOffsetX: number = canvasOffsetData.left;
         let canvasOffsetY: number = canvasOffsetData.top;
@@ -382,17 +312,13 @@ export class GraphView extends React.Component<Props, State> {
             ...prevState,
             canvas: {
                 ...prevState.canvas,
-                selfData:
-                {
-                    ...prevState.canvas.selfData,
-                    offsetX: canvasOffsetX,
-                    offsetY: canvasOffsetY
-                }
+                offsetX: canvasOffsetX,
+                offsetY: canvasOffsetY
             }
-        }), () => this.updateModel());
+        }), () => this.updateViews());
     }
 
-    private drawNode(node: Node, isSelected: boolean = false) {
+    private drawNode(node: Node, isSelected: boolean = false): void {
         // отрисовка границ узла
         this.canvasContext.fillStyle = node.color;
         this.canvasContext.fillRect(
@@ -400,6 +326,7 @@ export class GraphView extends React.Component<Props, State> {
             node.pos[1] - this.props.nodePxSize! - this.props.nodePxBorder! * 2, 
             this.props.nodePxSize! * 2 + this.props.nodePxBorder! * 2, 
             this.props.nodePxSize! * 2 + this.props.nodePxBorder! * 2);
+            
         // если узел выделен то граница "белая", иначе "угольная"
         this.canvasContext.fillStyle = isSelected ? "#FFFFFF" : "#333333";
         this.canvasContext.fillRect(
@@ -422,7 +349,7 @@ export class GraphView extends React.Component<Props, State> {
         this.canvasContext.fillText(node.label, node.pos[0], node.pos[1] + this.props.nodePxSize! * 2.5);
     }
 
-    private drawLink(nodeFrom: Node, nodeTo: Node) {
+    private drawLink(nodeFrom: Node, nodeTo: Node): void {
         this.canvasContext.lineWidth = this.props.linePxThickness!;
         this.canvasContext.beginPath();
         this.canvasContext.moveTo(nodeFrom.pos[0], nodeFrom.pos[1]);
@@ -432,7 +359,40 @@ export class GraphView extends React.Component<Props, State> {
         this.canvasContext.closePath();
     }
 
-    private updateModel() {
+    public getNodesArr(): Array<Node> {
+        return this.currentArrNodes;
+    }
+    
+    public getLinksArr(): Array<Link> {
+        return this.currentArrLinks;
+    }
+
+    public getGraphViewData(): GraphViewData {
+        return this.data;
+    }
+
+    public setGraphViewData(grapViewData: GraphViewData): void {
+        this.data = grapViewData;
+    }
+    
+    public getComponentObject(): HTMLElement {
+        return this.componentObj;
+    }
+
+    public getCaption(): string {
+        return this.props.captionHeader! !== GraphView.defaultProps.captionHeader ? this.props.captionHeader! : `${this.props.captionHeader}_${this.currentUnnamedObjectNum}`;
+    }
+
+    public updateCurrentArrNode(updatedNode: Node, index: number): void {
+        this.props.model.setNode(updatedNode, index);
+        this.currentArrNodes[index] = updatedNode;
+    }
+
+    public updateCurrentArrLink(linkData: Link, index: number): void {
+        this.currentArrLinks[index] = linkData;
+    }
+
+    public updateViews(): void {
         for(let i = 0; i < GraphView.objectStack.length; ++i) {
             if(GraphView.objectStack[i].props.model === this.props.model) {
                 GraphView.objectStack[i].update();
@@ -440,13 +400,13 @@ export class GraphView extends React.Component<Props, State> {
         }
     }
 
-    public update() {
+    public update(): void {
         if (this.canvasContext === null || this.canvasContext === undefined ||
             this.currentArrNodes === null || this.currentArrNodes === undefined) {
             return;
         }
 
-        this.canvasContext.clearRect(0, 0, this.state.canvas.selfData.width, this.state.canvas.selfData.height);
+        this.canvasContext.clearRect(0, 0, this.state.canvas.width, this.state.canvas.height);
         if (this.currentArrLinks.length > -1) {
             for (let i = 0; i < this.currentArrLinks.length; ++i) {
                 this.drawLink(this.currentArrNodes[this.currentArrLinks[i].from], this.currentArrNodes[this.currentArrLinks[i].to]);
@@ -454,7 +414,7 @@ export class GraphView extends React.Component<Props, State> {
         }
 
         for (let i = 0; i < this.currentArrNodes.length; ++i) {
-            this.drawNode(this.currentArrNodes[i], this.state.canvas.nodeData.selectedId === i ? true : false);
+            this.drawNode(this.currentArrNodes[i], this.data.canvas.nodeData.selectedId === i ? true : false);
         }
     }
 
@@ -466,7 +426,16 @@ export class GraphView extends React.Component<Props, State> {
             this.componentObj.parentElement.removeEventListener("scroll", () => this.handlerScroll());
         }
 
+        if (this === GraphView.objectFocused) {
+            this.unfocuseContainer();
+        }
+
         GraphView.objectStack.splice(GraphView.objectStack.indexOf(this), 1);
+        if (GraphView.objectStack.length <= 0 && GraphView.isWindowMouseEvtCatched) {
+            window.removeEventListener("mouseup", (evt) => GraphView.handlerCanvasOnMouseUp(evt) );
+            window.removeEventListener("mousemove", (evt) => GraphView.handlerCanvasOnMouseMove(evt) );
+            GraphView.isWindowMouseEvtCatched = false;
+        }
     }
 
     public componentDidMount() {
@@ -490,34 +459,25 @@ export class GraphView extends React.Component<Props, State> {
                 this.canvasContext = tempContext;
                 this.update();
             }
-        }
-
-        if (this.nodeOptionsRef.current !== null) {
-            const tempNodeOptions = this.nodeOptionsRef.current;
-            this.nodeOptionsObj = tempNodeOptions;
         } 
 
         GraphView.objectStack.push(this);
+        if (GraphView.objectStack.length >= 1 && !GraphView.isWindowMouseEvtCatched) {
+            window.addEventListener("mouseup", (evt) => GraphView.handlerCanvasOnMouseUp(evt) );
+            window.addEventListener("mousemove", (evt) => GraphView.handlerCanvasOnMouseMove(evt) );
+            GraphView.isWindowMouseEvtCatched = true;
+        }
 
         // Установка размера контейнера, с учётом указаных viewHeightPx и viewWidthPx для canvas
-        const nodeOptionsObjStyles = window.getComputedStyle(this.nodeOptionsObj);
-        const containerObjStyles = window.getComputedStyle(this.componentObj);
         const canvasObjStyles = window.getComputedStyle(this.canvasObj);
-        let incWidthByMaxWidth: number = getStylePropNumberValue(nodeOptionsObjStyles, "max-width"),
-            incWidthByBorder: number = getStylePropNumberValue(containerObjStyles, "border-right"),
-            incHeightByMarginTop: number = getStylePropNumberValue(canvasObjStyles, "margin-top");
-
+        let incHeightByMarginTop: number = getStylePropNumberValue(canvasObjStyles, "margin-top");
         this.setState(prevState => ({
             ...prevState,
             container: {
+                ...prevState.container,
                 height: prevState.container.height + incHeightByMarginTop,
-                width: prevState.container.width + incWidthByMaxWidth + incWidthByBorder
             },
         }), () => this.handlerResize());
-    }
-
-    public shouldComponentUpdate(){
-        return true;
     }
 
     public render() {
@@ -530,220 +490,18 @@ export class GraphView extends React.Component<Props, State> {
                     width: `${this.state.container.width}px`, 
                     height: `${this.state.container.height}px`
                 }}
+                onMouseDown={(evt) => this.handlerFocuseContainer(evt)}
             >
                 <div className="graph-view-caption">
-                    { this.props.captionHeader !== GraphViewConfig.defaultValues.captionHeader ? this.props.captionHeader : `${this.props.captionHeader}_${this.currentUnnamedObjectNum}` }
+                    { this.props.captionHeader !== GraphView.defaultProps.captionHeader ? this.props.captionHeader : `${this.props.captionHeader}_${this.currentUnnamedObjectNum}` }
                 </div>
-                <input type="button" id="graph-view-close" value="X" onClick={ () => this.handlerHideGraphView() }/>
+                <input type="button" id="graph-view-close" value="X" onClick={ (evt) => this.handlerHideGraphView(evt) }/>
                 <canvas 
                     ref={ this.canvasRef }
-                    width={ this.state.canvas.selfData.width } 
-                    height={ this.state.canvas.selfData.height }
+                    width={ this.state.canvas.width } 
+                    height={ this.state.canvas.height }
                     onMouseDown={ (evt) => this.handlerCanvasOnMouseDown(evt) }
-                    onMouseUp={ (evt) => this.handlerCanvasOnMouseUp(evt) }
-                    onMouseOut={ (evt) => this.handlerCanvasOnMouseOut(evt) }
-                    onMouseMove={ (evt) => this.handlerCanvasOnMouseMove(evt) }    
                 />
-                <div className="graph-view-control" ref={ this.nodeOptionsRef }>
-                    <h4>Добавление узлов</h4>
-                    <div className="graph-view-control-row-container">
-                        <input 
-                            type="button" 
-                            value="Добавить" 
-                            onClick={() => this.handlerAddNode()}
-                        />
-                        <input 
-                            type="button" 
-                            value="Удалить" 
-                            onClick={() => this.handlerRemoveNode()}
-                        />
-                    </div>
-                    {   
-                        this.state.canvas.nodeData.selectedId >= 0 && 
-                        <div className="graph-node-control">
-                            <h4>Настройка узла {`[${this.state.canvas.nodeData.selectedId}]:` + this.currentArrNodes[this.state.canvas.nodeData.selectedId].label}</h4>
-                            <label htmlFor={GraphViewConfig.fieldsAttrIds.nodeLabel}>Наименование узла:</label>
-                            <input 
-                                type="text" 
-                                placeholder="sample_node_<N>" 
-                                id={ GraphViewConfig.fieldsAttrIds.nodeLabel } 
-                                value={ this.state.canvas.nodeData.selectedNode!.label }
-                                onChange={ (evt) => { 
-                                    let newLabel: string = evt.currentTarget.value;
-                                    this.setState(prevState => ({
-                                        ...prevState,
-                                        canvas: {
-                                            ...prevState.canvas,
-                                            nodeData: {
-                                                ...prevState.canvas.nodeData,
-                                                selectedNode: {
-                                                    ...prevState.canvas.nodeData.selectedNode!,
-                                                    label: newLabel
-                                                }
-                                            }
-                                        }
-                                    }), () => {
-                                        this.props.model.setNode(this.state.canvas.nodeData.selectedNode!,this.state.canvas.nodeData.selectedId);
-                                        this.currentArrNodes[this.state.canvas.nodeData.selectedId] = this.state.canvas.nodeData.selectedNode!;
-                                        this.updateModel();
-                                    });
-                                }}
-                            />
-                            <div className="graph-view-control-row-container">
-                                <div>
-                                    <label htmlFor={GraphViewConfig.fieldsAttrIds.nodePosX}>X:</label>
-                                    <input 
-                                        type="text" 
-                                        placeholder="X" 
-                                        id={ GraphViewConfig.fieldsAttrIds.nodePosX } 
-                                        value={ this.state.canvas.nodeData.selectedNode!.pos[0] }
-                                        pattern="[0-9]*"
-                                        onChange={ (evt) => { 
-                                            if (evt.currentTarget.validity.valid) {
-                                                let newPosX = parseInt(evt.currentTarget.value);
-                                                if (newPosX > this.state.canvas.selfData.width) {
-                                                    newPosX = this.state.canvas.selfData.width;
-                                                }
-                                                this.setState(prevState => ({
-                                                    ...prevState,
-                                                    canvas: {
-                                                        ...prevState.canvas,
-                                                        nodeData: {
-                                                            ...prevState.canvas.nodeData,
-                                                            selectedNode: {
-                                                                ...prevState.canvas.nodeData.selectedNode!,
-                                                                pos: [newPosX, this.state.canvas.nodeData.selectedNode!.pos[1]]
-                                                            }
-                                                        }
-                                                    }
-                                                }), () => {
-                                                    this.props.model.setNode(this.state.canvas.nodeData.selectedNode!, this.state.canvas.nodeData.selectedId);
-                                                    this.currentArrNodes[this.state.canvas.nodeData.selectedId] = this.state.canvas.nodeData.selectedNode!;
-                                                    this.updateModel();
-                                                });
-                                            }
-                                        }}
-                                    />
-                                </div>
-                                <div>
-                                    <label htmlFor={GraphViewConfig.fieldsAttrIds.nodePosY}>Y:</label>
-                                    <input 
-                                        type="text" 
-                                        placeholder="Y" 
-                                        id={ GraphViewConfig.fieldsAttrIds.nodePosY } 
-                                        value={ this.state.canvas.nodeData.selectedNode!.pos[1] }
-                                        pattern="[0-9]*"
-                                        onChange={ (evt) => { 
-                                            if (evt.currentTarget.validity.valid) {
-                                                let newPosY = parseInt(evt.currentTarget.value);
-                                                if (newPosY > this.state.canvas.selfData.height) {
-                                                    newPosY = this.state.canvas.selfData.height;
-                                                }
-                                                this.setState(prevState => ({
-                                                    ...prevState,
-                                                    canvas: {
-                                                        ...prevState.canvas,
-                                                        nodeData: {
-                                                            ...prevState.canvas.nodeData,
-                                                            selectedNode: {
-                                                                ...prevState.canvas.nodeData.selectedNode!,
-                                                                pos: [this.state.canvas.nodeData.selectedNode!.pos[0], newPosY]
-                                                            }
-                                                        }
-                                                    }
-                                                }), () => {
-                                                    this.props.model.setNode(this.state.canvas.nodeData.selectedNode!, this.state.canvas.nodeData.selectedId);
-                                                    this.currentArrNodes[this.state.canvas.nodeData.selectedId] = this.state.canvas.nodeData.selectedNode!;
-                                                    this.updateModel();
-                                                });
-                                            }
-                                        }}
-                                    />
-                                </div>
-                            </div>
-                            <label htmlFor={GraphViewConfig.fieldsAttrIds.nodeColor}>Цвет узла:
-                                <span 
-                                    style={{
-                                        backgroundColor: this.state.canvas.nodeData.selectedNode!.color, 
-                                        display: "inline-block", 
-                                        width: "10pt", 
-                                        height: "10pt"
-                                    }}>
-                                </span>
-                            </label>
-                            <input 
-                                type="text" placeholder="#??????" 
-                                id={ GraphViewConfig.fieldsAttrIds.nodeColor } 
-                                value={ this.state.canvas.nodeData.selectedNode!.color }
-                                onChange={ (evt) => {
-                                    let newColor: string = evt.currentTarget.value;  
-                                    this.setState(prevState => ({
-                                        ...prevState,
-                                        canvas: {
-                                            ...prevState.canvas,
-                                            nodeData: {
-                                                ...prevState.canvas.nodeData,
-                                                selectedNode: {
-                                                    ...prevState.canvas.nodeData.selectedNode!,
-                                                    color: newColor
-                                                }
-                                            }
-                                        }
-                                    }), () => {
-                                        this.props.model.setNode(this.state.canvas.nodeData.selectedNode!,this.state.canvas.nodeData.selectedId);
-                                        this.currentArrNodes[this.state.canvas.nodeData.selectedId] = this.state.canvas.nodeData.selectedNode!;
-                                        this.updateModel();
-                                    });
-                                }}
-                            />
-                            <label htmlFor={GraphViewConfig.fieldsAttrIds.nodeLinks}>Связи узла:</label>
-                            <table id={GraphViewConfig.fieldsAttrIds.nodeLinks}>
-                                <tr>
-                                    <th>От</th>
-                                    <th>До</th>
-                                    <th>-</th>
-                                </tr>
-                                {
-                                    this.currentArrLinks.map(
-                                        (element,index) => 
-                                            element.from === this.state.canvas.nodeData.selectedId || element.to === this.state.canvas.nodeData.selectedId ?
-                                                <tr data-index={ index }>
-                                                    <td>{ `[${element.from}]:${this.currentArrNodes[element.from].label}` }</td>
-                                                    <td>{ `[${element.to}]:${this.currentArrNodes[element.to].label}` }</td>
-                                                    <td><input type="button" value="X" onClick={ () => this.handlerRemoveLink(index) }/></td>
-                                                </tr> 
-                                            : ""
-                                        )
-                                }
-                                <tr>
-                                    <td>
-                                        <input 
-                                            type="text" 
-                                            placeholder="ID узла от" 
-                                            pattern="[0-9]*"
-                                            id={ GraphViewConfig.fieldsAttrIds.nodeLinksFrom }
-                                        />
-                                    </td>
-                                    <td>
-                                        <input 
-                                            type="text" 
-                                            placeholder="ID узла до" 
-                                            pattern="[0-9]*"
-                                            id={ GraphViewConfig.fieldsAttrIds.nodeLinksTo }
-                                        />
-                                    </td>
-                                    <td>
-                                        <input 
-                                            type="button" 
-                                            id="node-link-add" 
-                                            value="Добавить" 
-                                            onClick={ () => this.handlerAddLink() }
-                                        /></td>
-                                </tr>
-                            </table>
-                        </div>
-                    }
-                </div>
             </div>
         );
     }
