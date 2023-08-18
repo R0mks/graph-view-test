@@ -1,50 +1,132 @@
-import React from 'react';
+import { GraphModel, Node as GraphNode, Link as GraphLink } from './graph-model';
 import { GraphView } from './graph-view';
-import { GraphModel } from './graph-model';
 import './App.css';
 
-function App() {
-  let sampleGraphModel: GraphModel = new GraphModel(
-    [
-      {label:"Узел 1.1", pos:[70, 70], color:"#AA1122"}, 
-      {label:"Узел 2.1", pos:[130, 190], color:"#11DD33"},  
-      {label:"Узел 2.2", pos:[180, 290], color:"#11DD33"}, 
-      {label:"Узел 3.1", pos:[220, 120], color:"#0022FF"}, 
-      {label:"Узел 3.2", pos:[300, 30], color:"#AAAA00"}, 
-      {label:"Узел 3.3", pos:[350, 100], color:"#AAAA00"}, 
-      {label:"Узел 4.1", pos:[250, 180], color:"#0022FF"}, 
-      {label:"Узел 4.2", pos:[290, 260], color:"#0022FF"}, 
-      {label:"Узел 5.1", pos:[450, 70], color:"#CC7700"}, 
-      {label:"Узел 5.2", pos:[420, 180], color:"#CC7700"}
-    ],
-    [
-      {from:0, to:1}, 
-      {from:1, to:2},
-      {from:1, to:3},
-      {from:2, to:6},
-      {from:2, to:7},
-      {from:3, to:4},
-      {from:3, to:5},
-      {from:5, to:8},
-      {from:5, to:9}
-    ]);
+interface viewResolution {
+  width: number, 
+  height:number
+}
 
-    let sampleGraphModel1: GraphModel = new GraphModel(
-      [
-        {label:"Узел 1.1", pos:[70, 70], color:"#AA1122"}, 
-        {label:"Узел 2.1", pos:[130, 190], color:"#11DD33"},  
-        {label:"Узел 2.2", pos:[180, 290], color:"#11DD33"}, 
-        {label:"Узел 3.1", pos:[220, 120], color:"#0022FF"}, 
-        {label:"Узел 3.2", pos:[300, 30], color:"#AAAA00"}, 
-        {label:"Узел 3.3", pos:[350, 100], color:"#AAAA00"}
-      ],
-      [
-        {from:0, to:1}, 
-        {from:1, to:2},
-        {from:1, to:3},
-        {from:3, to:4},
-        {from:3, to:5},
-      ]);
+interface GenerationOptions {
+  modelCount: number;
+  graphViewCount: number;
+  nodesCount: {
+    min: number;
+    max: number;
+  },
+  linksCount: {
+    min: number;
+    max: number;
+  }, 
+  viewResolutions: Array<viewResolution>
+}
+
+const generationOps: GenerationOptions = {
+  modelCount: 3,
+  graphViewCount: 10,
+  nodesCount: {
+    min:5,
+    max:10
+  },
+  linksCount: {
+    min:1,
+    max:10
+  },
+  viewResolutions: [
+    {width:320, height:240},
+    {width:640, height:480},
+    {width:800, height:600}
+  ]
+} 
+
+function getRandValBetween(min: number, max: number): number {
+  if (min > max) {
+    throw new Error("Значение min больше max");
+  }
+  return Math.floor(Math.random() * (max - min + 1) + min);
+}
+
+function getRandHexColor(): string {
+  return '#'+(Math.random() * 0xFFFFFF << 0).toString(16).padStart(6, '0');
+}
+
+function getFactorial(number: number): number {
+  return number != 1 ? number * getFactorial(number - 1) : 1;
+}
+
+function floorLinkCombs(nodesCnt: number, linksCount: number): number {
+  let possibleCombinations:  number = getFactorial(nodesCnt) / ( getFactorial(2) * getFactorial(nodesCnt - 2) );
+  return possibleCombinations < linksCount ? possibleCombinations : linksCount;  
+}
+
+function App() {
+  
+  // Генерация списка graphModel  
+  let graphModelList: Array<{model: GraphModel, viewResolution: viewResolution}> = [];
+  if (generationOps.modelCount > 0) { 
+    for(let i = 0; i < generationOps.modelCount; ++i) {
+      let nodesList: Array<GraphNode> = [];
+      let linksList: Array<GraphLink> = [];
+      
+      let tempLinksList: Array<GraphLink> = new Array<GraphLink>();
+
+      let nodesCount: number = getRandValBetween(generationOps.nodesCount.min, generationOps.nodesCount.max);
+      let linksCount: number = floorLinkCombs(nodesCount, getRandValBetween(generationOps.linksCount.min, generationOps.linksCount.max)); // Если случайное значение по указанным в опциях параметрам получается больше чем возможно максимальное кол-во связей, то происходит "округление" до этого макс. возможного числа 
+      let resolutionIdx: number = getRandValBetween(1, generationOps.viewResolutions.length - 1);
+
+      // Заполнение списка узлов
+      for (let j = 0; j < nodesCount; ++j) {
+        let currNodeColor: string = getRandHexColor();
+        let currNodePos: Array<number> = [ getRandValBetween(0, generationOps.viewResolutions[resolutionIdx].width),
+                                           getRandValBetween(0, generationOps.viewResolutions[resolutionIdx].height) ];
+        let currNodeLabel: string = currNodeColor;
+        nodesList.push({
+          label: currNodeLabel, 
+          pos: currNodePos, 
+          color: currNodeColor
+        });
+      }
+
+      // Генерация множества возможных связей (ссылки)
+      for (let j = 0; j < nodesCount - 1; ++j) {
+        for (let k = j + 1; k < nodesCount ; ++k) {
+          tempLinksList.push({
+            from:j, 
+            to:k
+          });
+        }
+      }
+
+      // Заполнение списка связей (ссылки)
+      for (let j = 0; j < linksCount; ++j) {
+        let tmpLinksIndex: number = getRandValBetween(0, tempLinksList.length - 1);
+        linksList.push(tempLinksList[tmpLinksIndex]);
+        tempLinksList.splice(tmpLinksIndex,1);
+      }
+      graphModelList.push({ 
+        model: new GraphModel(nodesList, linksList), 
+        viewResolution: generationOps.viewResolutions[resolutionIdx]
+      });
+    }
+  }
+
+  // Генерация списка graphView
+  let graphViewList: Array<JSX.Element> = [];
+  if(generationOps.graphViewCount > 0) {
+    for(let i = 0; i < generationOps.graphViewCount; ++i) {
+      let modelIdx: number = getRandValBetween(0, graphModelList.length - 1);
+      console.log(graphModelList[modelIdx].model);
+      graphViewList.push(
+        <GraphView
+          model={graphModelList[modelIdx].model}
+          viewWidthPx={graphModelList[modelIdx].viewResolution.width}
+          viewHeightPx={graphModelList[modelIdx].viewResolution.height}
+          captionHeader={`NodesCount: ${graphModelList[modelIdx].model.getNodes().length}; LinksCount: ${graphModelList[modelIdx].model.getLinks().length}`}
+        />
+      );
+      
+    }
+  }
 
   return (
     <div className="App">
@@ -52,27 +134,7 @@ function App() {
         graph-view-test
       </header>
       <main>
-        <GraphView 
-          model={sampleGraphModel}
-          viewWidthPx={640}
-          viewHeightPx={480}
-        />
-        <GraphView 
-          model={sampleGraphModel}
-          viewWidthPx={640}
-          viewHeightPx={480}
-          captionHeader="Sample view"
-        />
-        <GraphView 
-          model={sampleGraphModel1}
-          viewWidthPx={640}
-          viewHeightPx={480}
-        />
-        <GraphView 
-          model={sampleGraphModel}
-          viewWidthPx={640}
-          viewHeightPx={480}
-        />
+        { graphViewList }
       </main>
       <footer>
         Test project 2023
