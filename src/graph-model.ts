@@ -9,16 +9,15 @@ export interface Link {
     to: number;
 }
 
-const NODE_DEFAULT: Node = {
-    label: "sample_node",
-    pos: [0, 0],
-    color: "#000000"
-}
-
-const COLOR_REGEX: RegExp = /#[a-f\d]{3}(?:[a-f\d]?|(?:[a-f\d]{3}(?:[a-f\d]{2})?)?)\b/i;
-
-
 export class GraphModel {
+    private static defaultNode: Node = {
+        label: "sample_node",
+        pos: [0, 0],
+        color: "#000000"
+    }
+    /// HEX code pattern
+    private static colorRegex: RegExp = /#[a-f\d]{3}(?:[a-f\d]?|(?:[a-f\d]{3}(?:[a-f\d]{2})?)?)\b/i;
+
     private nodeLabelEmptyCounter: number;
     private arrNode: Array<Node>;
     private arrLinks: Array<Link>;
@@ -92,36 +91,42 @@ export class GraphModel {
     }
     
     public setNode(node: Node, index: number): boolean {
-        let tempNode = this.nodeCorrect(node);
-        if(this.arrNode[index] = tempNode) {
-            return true;
+        if (!this.arrNode.length ||
+            index > this.arrNode.length ||
+            index < 0) {
+            return false;
         }
-        return false;
+
+        let tempNode = this.nodeCorrect(node);
+        this.arrNode[index] = tempNode;
+        return true;
     }
 
     public setLink(link: Link, index: number): boolean {
-        if(!this.isLinkCorrect(link)) {
+        if (!this.isLinkCorrect(link) ||
+            !this.arrLinks.length ||
+            index > this.arrLinks.length ||
+            index < 0 ) {
             return false;
         }
-        if (this.arrLinks[index] = link) {
-            return true;
-        }
-        return false;
+
+        this.arrLinks[index] = link;
+        return true;
     }
 
     private nodeCorrect(node: Node): Node {
         if(node.label.length <= 0) {
             // "sample_node_<N>"
-            node.label = `${NODE_DEFAULT.label}_${this.nodeLabelEmptyCounter}`;
+            node.label = `${GraphModel.defaultNode.label}_${this.nodeLabelEmptyCounter}`;
             this.nodeLabelEmptyCounter += 1;
         }
         
         if(node.pos.length < 2) {
-            node.pos = NODE_DEFAULT.pos;
+            node.pos = GraphModel.defaultNode.pos;
         }
         
-        if(!COLOR_REGEX.test(node.color)) {
-            node.color = NODE_DEFAULT.color;
+        if(!GraphModel.colorRegex.test(node.color)) {
+            node.color = GraphModel.defaultNode.color;
         }
 
         return node;
@@ -132,14 +137,14 @@ export class GraphModel {
         let existsSameLinkCount: number = 
             this.arrLinks.filter(linkElement => linkElement === link || linkElement === reverseLink).length;
         
-        if (existsSameLinkCount > 1) {
+        if (existsSameLinkCount > 0) {
             return true;
         }
         return false;
     }
 
     private isLinkCorrect(link: Link): boolean {
-        if (link.from == link.to) {
+        if (link.from === link.to) {
             return false;
         }
         if (this.arrNode === null ||

@@ -22,17 +22,17 @@ interface GenerationOptions {
 }
 
 const generationOps: GenerationOptions = {
-  modelCount: 3,
-  graphViewCount: 10,
-  nodesCount: {
+  modelCount: 1,                            // Количество моделей (GraphModel)
+  graphViewCount: 3,                        // Количество view-окнон (GraphView)
+  nodesCount: {                             // Границы случайного числа кол-ва узлов для одной модели
     min:5,
-    max:10
+    max:15
   },
-  linksCount: {
+  linksCount: {                             // Границы случайного числа кол-ва ссылок для одной модели
     min:1,
-    max:10
+    max:20
   },
-  viewResolutions: [
+  viewResolutions: [                        // Перечень возможных размеров canvas у потенциального GraphView (в процессе генерации выбирается случайно)
     {width:320, height:240},
     {width:640, height:480},
     {width:800, height:600}
@@ -51,7 +51,7 @@ function getRandHexColor(): string {
 }
 
 function getFactorial(number: number): number {
-  return number != 1 ? number * getFactorial(number - 1) : 1;
+  return number !== 1 ? number * getFactorial(number - 1) : 1;
 }
 
 function floorLinkCombs(nodesCnt: number, linksCount: number): number {

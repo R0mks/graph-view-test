@@ -360,11 +360,11 @@ export class GraphView extends React.Component<Props, State> {
     }
 
     public getNodesArr(): Array<Node> {
-        return this.currentArrNodes;
+        return this.props.model.getNodes();
     }
     
     public getLinksArr(): Array<Link> {
-        return this.currentArrLinks;
+        return this.props.model.getLinks();
     }
 
     public getGraphViewData(): GraphViewData {
